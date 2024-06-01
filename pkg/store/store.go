@@ -104,12 +104,8 @@ const (
 func GetPathPrefix() string {
 	pathPrefix := config.Cfg.PathPrefix
 	if pathPrefix == "" {
-		// add UserHomeDir to pathPrefix
-		homeDir, err := os.UserHomeDir()
-		if err != nil {
-			panic(fmt.Errorf("GetPathPrefix: error getting user home directory: %v", err))
-		}
-		pathPrefix = filepath.Join(homeDir, PATH_PREFIX)
+		// JF has non writable rootfs
+		pathPrefix = filepath.Join("/", "flash2", PATH_PREFIX)
 	}
 
 	// if pathPrefix does not exist, create it

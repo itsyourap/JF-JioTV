@@ -72,11 +72,12 @@ func (*JioTVConfig) Get(key string) interface{} {
 //
 // If no file is found, an empty string is returned.
 func commonFileExists() string {
-	homeDir, err := os.UserHomeDir()
+	_, err := os.UserHomeDir()
 	if err != nil {
 		log.Println("ERROR: Unable to get user home directory:", err)
 	}
-	pathPrefix := filepath.Join(homeDir, ".jiotv_go")
+	// JF has non writable rootfs
+	pathPrefix := filepath.Join("/", "flash2", ".jiotv_go")
 	commonFiles := []string{"jiotv_go.yml", "jiotv_go.toml", "jiotv_go.json", "config.json", "config.yml", "config.toml", pathPrefix + "config.json", pathPrefix + "config.yml", pathPrefix + "config.toml"}
 	for _, filename := range commonFiles {
 		if _, err := os.Stat(filename); err == nil {

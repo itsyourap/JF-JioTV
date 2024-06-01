@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -497,6 +498,8 @@ func GetRequestClient() *fasthttp.Client {
 		Dial: fasthttp.DialFunc(func(addr string) (netConn net.Conn, err error) {
 			return fasthttp.DialTimeout(addr, 5*time.Second)
 		}),
+		// JF has no root CA certificates
+		TLSConfig: &tls.Config{InsecureSkipVerify: true},
 	}
 }
 
