@@ -21,16 +21,18 @@ import (
 
 var (
 	TV               *television.Television
-	DisableTSHandler = config.Cfg.DisableTSHandler
-	isLogoutDisabled = config.Cfg.DisableLogout
+	DisableTSHandler bool
+	isLogoutDisabled bool
 	Title            string
-	EnableDRM        = config.Cfg.DRM
+	EnableDRM        bool
 	SONY_LIST        = []string{"154", "155", "162", "289", "291", "471", "474", "476", "483", "514", "524", "525", "697", "872", "873", "874", "891", "892", "1146", "1393", "1772", "1773", "1774", "1775"}
 )
 
 const (
 	REFRESH_TOKEN_URL     = "https://auth.media.jio.com/tokenservice/apis/v1/refreshtoken?langId=6"
 	REFRESH_SSO_TOKEN_URL = "https://tv.media.jio.com/apis/v2.0/loginotp/refresh?langId=6"
+	PLAYER_USER_AGENT     = "plaYtv/7.0.5 (Linux;Android 8.1.0) ExoPlayerLib/2.11.7"
+	REQUEST_USER_AGENT    = "okhttp/4.2.2"
 )
 
 // Init initializes the necessary operations required for the handlers to work.
@@ -40,6 +42,9 @@ func Init() {
 	} else {
 		Title = "JioTV Go"
 	}
+	DisableTSHandler = config.Cfg.DisableTSHandler
+	isLogoutDisabled = config.Cfg.DisableLogout
+	EnableDRM = config.Cfg.DRM
 	if DisableTSHandler {
 		utils.Log.Println("TS Handler disabled!. All TS video requests will be served directly from JioTV servers.")
 	}
@@ -144,6 +149,15 @@ func LiveHandler(c *fiber.Ctx) error {
 	}
 	if id[:2] == "sl" {
 		return sonyLivRedirect(c, liveResult)
+	}
+	// Check if liveResult.Bitrates.Auto is empty
+	if liveResult.Bitrates.Auto == "" {
+		error_message := "No stream found for channel id: " + id + "Status: " + liveResult.Message
+		utils.Log.Println(error_message)
+		utils.Log.Println(liveResult)
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"message": error_message,
+		})
 	}
 	// quote url as it will be passed as a query parameter
 	// It is required to quote the url as it may contain special characters like ? and &
@@ -292,6 +306,7 @@ func SLHandler(c *fiber.Ctx) error {
 	c.Request().Header.Del("Accept-Language")
 	c.Request().Header.Del("Origin")
 	c.Request().Header.Del("Referer")
+	c.Request().Header.Set("User-Agent", PLAYER_USER_AGENT)
 	if err := proxy.Do(c, url, TV.Client); err != nil {
 		return err
 	}
@@ -329,7 +344,7 @@ func RenderKeyHandler(c *fiber.Ctx) error {
 	c.Request().Header.Set("srno", "230203144000")
 	c.Request().Header.Set("ssotoken", TV.SsoToken)
 	c.Request().Header.Set("channelId", channel_id)
-
+	c.Request().Header.Set("User-Agent", PLAYER_USER_AGENT)
 	if err := proxy.Do(c, decoded_url, TV.Client); err != nil {
 		return err
 	}
@@ -346,7 +361,7 @@ func RenderTSHandler(c *fiber.Ctx) error {
 		utils.Log.Panicln(err)
 		return err
 	}
-
+	c.Request().Header.Set("User-Agent", PLAYER_USER_AGENT)
 	if err := proxy.Do(c, decoded_url, TV.Client); err != nil {
 		return err
 	}
@@ -357,9 +372,11 @@ func RenderTSHandler(c *fiber.Ctx) error {
 // ChannelsHandler fetch all channels from JioTV API
 // Also to generate M3U playlist
 func ChannelsHandler(c *fiber.Ctx) error {
+
 	quality := strings.TrimSpace(c.Query("q"))
 	splitCategory := strings.TrimSpace(c.Query("c"))
 	languages := strings.TrimSpace(c.Query("l"))
+	skipGenres := strings.TrimSpace(c.Query("sg"))
 	apiResponse := television.Channels()
 	// hostUrl should be request URL like http://localhost:5001
 	hostURL := strings.ToLower(c.Protocol()) + "://" + c.Hostname()
@@ -372,6 +389,10 @@ func ChannelsHandler(c *fiber.Ctx) error {
 		for _, channel := range apiResponse.Result {
 
 			if languages != "" && !utils.ContainsString(television.LanguageMap[channel.Language], strings.Split(languages, ",")) {
+				continue
+			}
+
+			if skipGenres != "" && utils.ContainsString(television.CategoryMap[channel.Category], strings.Split(skipGenres, ",")) {
 				continue
 			}
 
@@ -397,8 +418,7 @@ func ChannelsHandler(c *fiber.Ctx) error {
 		// Set the Content-Disposition header for file download
 		c.Set("Content-Disposition", "attachment; filename=jiotv_playlist.m3u")
 		c.Set("Content-Type", "application/vnd.apple.mpegurl") // Set the video M3U MIME type
-		c.Response().Header.Set("Cache-Control", "public, max-age=3600")
-		return c.SendString(m3uContent)
+		return c.SendStream(strings.NewReader(m3uContent))
 	}
 
 	for i, channel := range apiResponse.Result {
@@ -470,12 +490,14 @@ func PlaylistHandler(c *fiber.Ctx) error {
 	quality := c.Query("q")
 	splitCategory := c.Query("c")
 	languages := c.Query("l")
-	return c.Redirect("/channels?type=m3u&q="+quality+"&c="+splitCategory+"&l="+languages, fiber.StatusMovedPermanently)
+	skipGenres := c.Query("sg")
+	return c.Redirect("/channels?type=m3u&q="+quality+"&c="+splitCategory+"&l="+languages+"&sg="+skipGenres, fiber.StatusMovedPermanently)
 }
 
 // ImageHandler loads image from JioTV server
 func ImageHandler(c *fiber.Ctx) error {
 	url := "https://jiotv.catchup.cdn.jio.com/dare_images/images/" + c.Params("file")
+	c.Request().Header.Set("User-Agent", REQUEST_USER_AGENT)
 	if err := proxy.Do(c, url, TV.Client); err != nil {
 		return err
 	}
