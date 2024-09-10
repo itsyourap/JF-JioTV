@@ -1,8 +1,10 @@
 package utils
 
 import (
+	"crypto/rand"
 	"crypto/tls"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -124,7 +126,7 @@ func LoginVerifyOTP(number, otp string) (map[string]string, error) {
 				Platform: LoginPayloadDeviceInfoInfoPlatform{
 					Name: "SM-G930F",
 				},
-				AndroidID: "6fcadeb7b4b10d77",
+				AndroidID: GetDeviceID(),
 			},
 		},
 	}
@@ -248,7 +250,7 @@ func Login(username, password string) (map[string]string, error) {
 					Name:    "vbox86p",
 					Version: "8.0.0",
 				},
-				AndroidID: "6fcadeb7b4b10d77",
+				AndroidID: GetDeviceID(),
 			},
 		},
 	}
@@ -323,6 +325,28 @@ func Login(username, password string) (map[string]string, error) {
 // GetPathPrefix alias for store.GetPathPrefix
 func GetPathPrefix() string {
 	return store.GetPathPrefix()
+}
+
+// GetDeviceID returns the device ID
+func GetDeviceID() string {
+	deviceID, err := store.Get("deviceId")
+	if err != nil {
+		Log.Println(err)
+		err = GenerateRandomString()
+		if err != nil {
+			Log.Println(err)
+			return ""
+		}
+		deviceID, err = store.Get("deviceId")
+		if deviceID == "" {
+			Log.Println("Device ID is empty")
+			return ""
+		} else if err != nil {
+			Log.Println(err)
+			return ""
+		}
+	}
+	return deviceID
 }
 
 // GetJIOTVCredentials return credentials from environment variables or credentials file
@@ -535,4 +559,16 @@ func ContainsString(item string, slice []string) bool {
 		}
 	}
 	return false
+}
+
+// GenerateRandomString generates a random 16-character hexadecimal string.
+func GenerateRandomString() error {
+	bytes := make([]byte, 8) // 8 bytes will result in a 16-character hex string
+	if _, err := rand.Read(bytes); err != nil {
+		return err
+	}
+	if _, err := store.Get("deviceId"); err != nil {
+		store.Set("deviceId", hex.EncodeToString(bytes))
+	}
+	return nil
 }
